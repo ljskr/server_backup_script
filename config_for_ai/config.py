@@ -14,7 +14,7 @@ ENCIPHER_FILE = "./config_for_ai/md5_list.txt"
 ##########################
 # config for aliyun oss2
 ##########################
-aliyum_access_id = "your access id"
-aliyum_access_key = "your access key"
-aliyum_endpoint = "your endpoint"
-aliyum_bucket_name = "your bucket name"
+aliyun_access_id = "your access id"
+aliyun_access_key = "your access key"
+aliyun_endpoint = "your endpoint"
+aliyun_bucket_name = "your bucket name"

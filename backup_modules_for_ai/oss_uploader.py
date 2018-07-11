@@ -18,8 +18,8 @@ def upload(local_file, remote_file):
         local_file: 本地文件路径
         remote_file: 运程文件名
     """
-    auth = oss2.Auth(config.aliyum_access_id, config.aliyum_access_key)
-    bucket = oss2.Bucket(auth, config.aliyum_endpoint, config.aliyum_bucket_name)
+    auth = oss2.Auth(config.aliyun_access_id, config.aliyun_access_key)
+    bucket = oss2.Bucket(auth, config.aliyun_endpoint, config.aliyun_bucket_name)
     
     bucket.put_object_from_file(remote_file, local_file)
 
@@ -39,8 +39,8 @@ def batch_upload(file_lists):
     elif len(file_lists) == 0:
         return
 
-    auth = oss2.Auth(config.aliyum_access_id, config.aliyum_access_key)
-    bucket = oss2.Bucket(auth, config.aliyum_endpoint, config.aliyum_bucket_name)
+    auth = oss2.Auth(config.aliyun_access_id, config.aliyun_access_key)
+    bucket = oss2.Bucket(auth, config.aliyun_endpoint, config.aliyun_bucket_name)
 
     for element in file_lists:
         if not isinstance(element, tuple):
