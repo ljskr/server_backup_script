@@ -6,7 +6,7 @@
 import logging
 
 from .tasks import Task
-# from . import oss_uploader
+from . import oss_uploader
 
 class TaskManager(object):
     """
@@ -68,5 +68,5 @@ class TaskManager(object):
         """
         上传到 oss 中。
         """
-        # oss_uploader.batch_upload(self.result_list)
+        oss_uploader.batch_upload(self.result_list)
         pass

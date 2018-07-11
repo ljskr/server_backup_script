@@ -12,7 +12,7 @@ def get_task_list():
     task_list = []
 
     # PackTask 示例
-    dokuwiki_task = PackTask(name = "dokuwiki", output_dir = "/home/ai/backups/dokuwiki",
+    dokuwiki_task = PackTask(name = "dokuwiki", output_dir = "/root/backup/data/dokuwiki",
                             tar_run_dir = "/var/www",
                             backup_list = [ "dokuwiki/conf",
                                             "dokuwiki/data/attic",
@@ -24,6 +24,16 @@ def get_task_list():
                             remote_folder = "dokuwiki")
 
     task_list.append(dokuwiki_task)
+
+    # MysqlTask 示例
+    db1_task = MysqlTask(name="db1", output_dir="/root/backup/data/mydb",
+                            dump_option="-u root --databases mydb", remote_folder="mydb")
+    task_list.append(db1_task)
+
+    # SingleFileTask 示例
+    file1_task = SingleFileTask(name="file1", output_dir="/root/backup/data/myfile",
+                                    source_file="/etc/profile", remote_folder="myfile")
+    task_list.append(file1_task)
 
     return task_list
 

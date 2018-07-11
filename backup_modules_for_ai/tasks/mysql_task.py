@@ -20,8 +20,7 @@ class MysqlTask(Task):
         入参:
             name  任务名
             output_dir  本地备份路径
-            tar_run_dir  tar 命令运行路径
-            backup_list  备份列表
+            dump_option  运行 mysqldump 所需参数
             remote_folder  远程备份目录
         """
         super(MysqlTask, self).__init__(name, remote_folder)
