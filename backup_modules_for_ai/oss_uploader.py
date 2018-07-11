@@ -6,7 +6,7 @@
 import logging
 import oss2
 
-import oss2_config as config
+from config_for_ai import config
 
 logger = logging.getLogger("oss_uploader")
 
