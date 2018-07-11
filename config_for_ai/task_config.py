@@ -8,19 +8,22 @@
 
 from backup_modules_for_ai.tasks import *
 
-task_list = []
+def get_task_list():
+    task_list = []
 
-# PackTask 示例
-dokuwiki_task = PackTask(name = "dokuwiki", output_dir = "/home/ai/backups/dokuwiki", 
-                        tar_run_dir = "/var/www", 
-                        backup_list = [ "dokuwiki/conf",
-                                        "dokuwiki/data/attic",
-                                        "dokuwiki/data/meta",
-                                        "dokuwiki/data/pages",
-                                        "dokuwiki/data/media",
-                                        "dokuwiki/data/media_attic",
-                                        "dokuwiki/data/media_meta"], 
-                        remote_folder = "dokuwiki")
+    # PackTask 示例
+    dokuwiki_task = PackTask(name = "dokuwiki", output_dir = "/home/ai/backups/dokuwiki",
+                            tar_run_dir = "/var/www",
+                            backup_list = [ "dokuwiki/conf",
+                                            "dokuwiki/data/attic",
+                                            "dokuwiki/data/meta",
+                                            "dokuwiki/data/pages",
+                                            "dokuwiki/data/media",
+                                            "dokuwiki/data/media_attic",
+                                            "dokuwiki/data/media_meta"],
+                            remote_folder = "dokuwiki")
 
-task_list.append(dokuwiki_task)
+    task_list.append(dokuwiki_task)
+
+    return task_list
 

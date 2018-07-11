@@ -6,7 +6,7 @@ import yaml
 from backup_modules_for_ai import *
 
 from config_for_ai import config
-from config_for_ai.task_config import task_list
+from config_for_ai.task_config import get_task_list
 
 logger = None
 # 初始化 logging
@@ -25,6 +25,7 @@ def main():
 
     task_manager = TaskManager()
 
+    task_list = get_task_list()
     for task in task_list:
         task_manager.add_task(task)
 
