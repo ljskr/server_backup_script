@@ -1,7 +1,8 @@
-# -*- coding: utf8 -*-
+"""
+Author: liujun (ljskryj@163.com)
+Date: 2018-07-10
+"""
 
-# Author: liujun
-# Date: 2018-07-10
 
 import datetime
 import logging
@@ -11,27 +12,33 @@ import shutil
 from .task import Task
 from ..encipher_manager import EncipherManager
 
+
 class SingleFileTask(Task):
     """
     单文件备份任务。只在有变更的情况下进行备份。
+
+    参数:
+        name  任务名
+        output_dir  本地备份路径
+        source_file  需要备份的文件
     """
 
-    def __init__(self, name, output_dir, source_file, remote_folder=None):
+    def __init__(self, name: str, output_dir: str, source_file: str):
         """
-        入参:
+        参数:
             name  任务名
             output_dir  本地备份路径
             source_file  需要备份的文件
-            remote_folder  远程备份目录
         """
-        super(SingleFileTask, self).__init__(name, remote_folder)
+        # super(SingleFileTask, self).__init__(name)
+        Task.__init__(self, name)
         self.logger = logging.getLogger("SingleFileTask")
         self.name = name
         self.output_dir = output_dir
         self.backup_file = source_file
         self.encipher_manager = EncipherManager()
 
-    def run(self):
+    def do_task(self) -> bool:
         """
         执行任务
         返回最终打包好的文件名和文件路径。
@@ -40,7 +47,8 @@ class SingleFileTask(Task):
 
         # 创建目录
         if not os.path.exists(self.output_dir):
-            self.logger.info("Task [%s]: create folder %s", self.name, self.output_dir)
+            self.logger.info("Task [%s]: create folder %s",
+                             self.name, self.output_dir)
             os.mkdir(self.output_dir)
 
         # 计算需要备份的文件的md5
@@ -52,24 +60,28 @@ class SingleFileTask(Task):
 
             # 重命名文件
             now = datetime.datetime.now()
-            self.output_file_name = "{}.{}_{}".format(self.name, now.strftime("%y%m%d_%H%M%S"), md5)
-            self.output_full_path = os.path.join(self.output_dir, self.output_file_name)
+            self.output_file_name = "{}.{}_{}".format(
+                self.name, now.strftime("%y%m%d_%H%M%S"), md5)
+            self.output_full_path = os.path.join(
+                self.output_dir, self.output_file_name)
 
-            self.logger.info("Task [%s]: copy file from %s to %s", self.name, self.backup_file, self.output_full_path)
+            self.logger.info("Task [%s]: copy file from %s to %s",
+                             self.name, self.backup_file, self.output_full_path)
             shutil.copyfile(self.backup_file, self.output_full_path)
 
             self.encipher_manager.set_value(self.backup_file, md5)
 
-            result =  True
+            result = True
         else:
-            self.logger.info("Task [%s]: md5 does not change, skip this task.", self.name)
+            self.logger.info(
+                "Task [%s]: md5 does not change, skip this task.", self.name)
             result = False
 
         self.logger.info("Task [%s]: 结束备份.", self.name)
         return result
 
-    def get_output_file_name(self):
+    def get_output_file_name(self) -> str:
         return self.output_file_name
 
-    def get_output_full_path(self):
+    def get_output_full_path(self) -> str:
         return self.output_full_path

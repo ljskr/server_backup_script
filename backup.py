@@ -1,38 +1,66 @@
-# -*- coding: utf8 -*-
+"""
+示例程序
+"""
 
 import logging.config
-import yaml
 
-from backup_modules_for_ai import *
+from easybk import TaskManager, PackTask, MysqlTask, SingleFileTask
+from easybk.uploaders.oss_uploader import OSSBucket, OSSUploader
 
-from config_for_ai import config
-from config_for_ai.task_config import get_task_list
 
-logger = None
-# 初始化 logging
 def init_logger():
-    global logger
-    logging.config.dictConfig(yaml.load(open(config.LOG_CONFIG)))
-    logger = logging.getLogger()
+    """
+    初始化 logging
+    """
+    logging.config.fileConfig("./logger.conf")
+
+
+def init_task(manager: TaskManager):
+    """
+    配置任务信息
+    """
+
+    # PackTask 示例
+    dokuwiki_task = PackTask(name="dokuwiki", output_dir="/root/backup/data/dokuwiki",
+                             tar_run_dir="/var/www",
+                             backup_list=["dokuwiki/conf",
+                                          "dokuwiki/data/attic",
+                                          "dokuwiki/data/meta",
+                                          "dokuwiki/data/pages",
+                                          "dokuwiki/data/media",
+                                          "dokuwiki/data/media_attic",
+                                          "dokuwiki/data/media_meta"])#,
+                             #remote_folder="dokuwiki")
+
+    # MysqlTask 示例
+    db1_task = MysqlTask(name="db1", output_dir="/root/backup/data/mydb",
+                         dump_option="-u root --databases mydb")#, remote_folder="mydb")
+
+    # SingleFileTask 示例
+    file1_task = SingleFileTask(name="file1", output_dir="/root/backup/data/myfile",
+                                source_file="/etc/profile")#, remote_folder="myfile")
+
+    manager.add_task(dokuwiki_task)
+    manager.add_task(db1_task)
+    manager.add_task(file1_task)
+
+    # OSS 上传示例
+    oss_bucket = OSSBucket("access_id", "access_key", "endpoint", "bucket_name")
+    oss_uploader = OSSUploader("oss_uploader", oss_bucket, "myfolder")
+    oss_uploader.add_task(file1_task)
+
+    manager.add_uploader(oss_uploader)
 
 
 def main():
+    """
+    主入口
+    """
     init_logger()
 
-    logger.info("准备执行备份任务！ ")
-    encipher_manager = EncipherManager()
-    encipher_manager.load_data_from_file(config.ENCIPHER_FILE)
-
     task_manager = TaskManager()
-
-    task_list = get_task_list()
-    for task in task_list:
-        task_manager.add_task(task)
-
+    init_task(task_manager)
     task_manager.run_all_task()
-
-    encipher_manager.save_data_to_file()
-    logger.info("所有备份任务执行完毕！ ")
 
 
 if __name__ == "__main__":

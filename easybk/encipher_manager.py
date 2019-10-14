@@ -1,12 +1,14 @@
-# -*- coding: utf8 -*-
+"""
+Author: liujun (ljskryj@163.com)
+Date: 2018-07-11
+"""
 
-# Author: liujun
-# Date: 2018-07-11
 
 import hashlib
 import logging
 
 from .singleton import Singleton
+
 
 class EncipherManager(Singleton):
     """
@@ -14,27 +16,27 @@ class EncipherManager(Singleton):
     """
 
     def __init__(self):
-        if not hasattr(self, '_has_init'):
-            self.file_dict = {}
-            self.changed = False
-            self.file_name = None
-            self.logger = logging.getLogger("EncipherManager")
-            self._has_init = True
+        self.logger = logging.getLogger("EncipherManager")
+        self.file_dict = {}
+        self.changed = False
+        self.file_name = None
 
     def load_data_from_file(self, file_name):
         """
         从文件加载摘要列表
         """
+        self.file_dict = {}
+        self.changed = False
+        self.file_name = file_name
+
         with open(file_name, "r") as fh:
             lines = fh.readlines()
             for line in lines:
                 cols = line.split()
                 self.file_dict[cols[1]] = cols[0]
-        self.changed = False
-        self.file_name = file_name
         self.logger.info("已加载 %s 条数据", len(self.file_dict))
 
-    def save_data_to_file(self, file_name = None, force = False):
+    def save_data_to_file(self, file_name=None, force=False):
         """
         保存摘要列表到文件中。
 
@@ -50,7 +52,7 @@ class EncipherManager(Singleton):
                 for (k, v) in self.file_dict.items():
                     fh.write("{} {}\n".format(v, k))
 
-    def check_if_has_changed(self, name, value):
+    def check_if_has_changed(self, name, value) -> bool:
         """
         通过摘要判断文件是否有变更。如果有变更返回 True，否则返回 False。
         """
@@ -67,21 +69,22 @@ class EncipherManager(Singleton):
         self.changed = True
 
     @staticmethod
-    def md5sum(file_name):
+    def md5sum(file_name) -> str:
         """
         计算文件md5值
-    
+
         参数： 文件名
         返回值： md5
         """
         def read_chunks(fh):
             fh.seek(0)
-            chunk = fh.read(8096)
-            while chunk:
-                yield chunk
+            while True:
                 chunk = fh.read(8096)
-            else:
-                fh.seek(0)  # 最后重置游标
+                if chunk:
+                    yield chunk
+                else:
+                    break
+            fh.seek(0)  # 最后重置游标
 
         md5 = hashlib.md5()
         with open(file_name, "rb") as fh:

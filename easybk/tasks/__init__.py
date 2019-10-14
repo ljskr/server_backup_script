@@ -1,7 +1,8 @@
-# -*- coding: utf8 -*-
+"""
+Author: liujun (ljskryj@163.com)
+Date: 2018-07-11
+"""
 
-# Author: liujun
-# Date: 2018-07-11
 
 from .task import Task
 from .pack_task import PackTask
