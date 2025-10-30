@@ -5,6 +5,7 @@ Date: 2018-07-10
 
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 from .encipher_manager import EncipherManager
 from .tasks import Task
@@ -51,9 +52,11 @@ class TaskManager():
 
         self.uploader_list.append(uploader)
 
-    def run_all_task(self):
+    def run_all_task(self, use_thread_pool: bool = True, max_workers: int = 3):
         """
         运行所有备份任务
+        :param use_thread_pool: 是否使用线程池并发执行任务
+        :param max_workers: 线程池最大并发数
         """
         self.logger.info("开始执行任务！")
         # 加载 encipher 文件
@@ -64,15 +67,28 @@ class TaskManager():
         task_count = len(self.task_list)
         self.logger.info("总备份任务数: %s", task_count)
 
-        cur_index = 1
-        for task in self.task_list:
+        def _run_task(index, tsk):
             try:
-                self.logger.info(
-                    "准备执行第 %s 个备份任务，[%s]", cur_index, task.get_name())
-                task.run()
+                self.logger.info("准备执行第 %s 个备份任务，[%s]", index, tsk.get_name())
+                tsk.run()
             except Exception:
-                self.logger.exception("Task [%s]: 备份发生异常。", task.get_name())
-            cur_index += 1
+                self.logger.exception("Task [%s]: 备份发生异常。", tsk.get_name())
+
+        if use_thread_pool and task_count > 0:
+            with ThreadPoolExecutor(max_workers=min(max_workers, task_count)) as executor:
+                futures = [executor.submit(_run_task, idx, t) for idx, t in enumerate(self.task_list, start=1)]
+                for f in futures:
+                    f.result()
+        else:
+            cur_index = 1
+            for task in self.task_list:
+                try:
+                    self.logger.info(
+                        "准备执行第 %s 个备份任务，[%s]", cur_index, task.get_name())
+                    task.run()
+                except Exception:
+                    self.logger.exception("Task [%s]: 备份发生异常。", task.get_name())
+                cur_index += 1
 
         self.logger.info("备份任务执行完毕！ ")
 

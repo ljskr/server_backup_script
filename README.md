@@ -23,6 +23,10 @@
 ## 2. 运行方式
 
 ```bash
+# 修改任务配置
+vi config.py
+
+# 执行备份任务
 python3 backup.py
 ```
 

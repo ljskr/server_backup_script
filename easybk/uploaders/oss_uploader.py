@@ -5,7 +5,6 @@ Date: 2018-07-10
 
 
 import logging
-import oss2
 
 from .uploader import Uploader, Task
 
@@ -29,6 +28,10 @@ class OSSBucket():
         """
         连接
         """
+        try:
+            import oss2
+        except ImportError:
+            raise ImportError("oss2 is not installed, please install it first")
         self.auth = oss2.Auth(self.access_id, self.access_key)
         self.bucket = oss2.Bucket(self.auth, self.endpoint, self.bucket_name)
         self.has_connect = True
@@ -56,14 +59,17 @@ class OSSUploader(Uploader):
 
     参数：
         name: 本实例名称
-        oss_bucket: oss 认证实例
+        access_id: oss 认证 ID
+        access_key: oss 认证密钥
+        endpoint: oss 认证端点
+        bucket_name: oss 认证 bucket 名称
         folder: oss 远程目录
     """
 
-    def __init__(self, name: str, oss_bucket: OSSBucket, folder: str = None):
+    def __init__(self, name: str, access_id: str, access_key: str, endpoint: str, bucket_name: str, folder: str = None):
         Uploader.__init__(self, name)
         self.logger = logging.getLogger("OSSUploader")
-        self.oss_bucket = oss_bucket
+        self.oss_bucket = OSSBucket(access_id, access_key, endpoint, bucket_name)
         self.folder = folder
 
     def do_upload(self, task: Task) -> bool:

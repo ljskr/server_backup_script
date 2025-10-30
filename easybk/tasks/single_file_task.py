@@ -15,15 +15,16 @@ from ..encipher_manager import EncipherManager
 
 class SingleFileTask(Task):
     """
-    单文件备份任务。只在有变更的情况下进行备份。
+    单文件备份任务。
 
     参数:
         name  任务名
         output_dir  本地备份路径
         source_file  需要备份的文件
+        backup_on_change 是否在只有变更的时候才进行备份
     """
 
-    def __init__(self, name: str, output_dir: str, source_file: str):
+    def __init__(self, name: str, output_dir: str, source_file: str, backup_on_change: bool = False):
         """
         参数:
             name  任务名
@@ -37,6 +38,8 @@ class SingleFileTask(Task):
         self.output_dir = output_dir
         self.backup_file = source_file
         self.encipher_manager = EncipherManager()
+        self.backup_on_change = backup_on_change
+
 
     def do_task(self) -> bool:
         """
@@ -55,9 +58,23 @@ class SingleFileTask(Task):
         md5 = EncipherManager.md5sum(self.backup_file)
         self.logger.info("Task [%s]: md5sum is %s", self.name, md5)
 
-        if self.encipher_manager.check_if_has_changed(self.backup_file, md5):
-            self.logger.info("Task [%s]: md5 has changed", self.name)
+        should_backup = False
+        # 判断 md5 是否有变更。
+        md5_changed = self.encipher_manager.check_if_has_changed(self.backup_file, md5)
 
+        if self.backup_on_change:
+            if md5_changed:
+                self.logger.info("Task [%s]: md5 has changed", self.name)
+                should_backup = True
+            else:
+                self.logger.info(
+                    "Task [%s]: md5 does not change, skip this task.", self.name)
+                should_backup = False
+        else:
+            # 直接备份
+            should_backup = True
+
+        if should_backup:
             # 重命名文件
             now = datetime.datetime.now()
             self.output_file_name = "{}.{}_{}".format(
@@ -69,12 +86,11 @@ class SingleFileTask(Task):
                              self.name, self.backup_file, self.output_full_path)
             shutil.copyfile(self.backup_file, self.output_full_path)
 
-            self.encipher_manager.set_value(self.backup_file, md5)
+            if md5_changed:
+                self.encipher_manager.set_value(self.backup_file, md5)
 
             result = True
         else:
-            self.logger.info(
-                "Task [%s]: md5 does not change, skip this task.", self.name)
             result = False
 
         self.logger.info("Task [%s]: 结束备份.", self.name)
