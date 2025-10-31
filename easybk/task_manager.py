@@ -59,6 +59,7 @@ class TaskManager():
             try:
                 self.logger.info("准备执行第 %s 个备份任务，[%s]", index, tsk.get_name())
                 tsk.run()
+                self.logger.info("第 %s 个备份任务执行完毕，[%s]", index, tsk.get_name())
             except Exception:
                 self.logger.exception("Task [%s]: 备份发生异常。", tsk.get_name())
 
@@ -71,9 +72,9 @@ class TaskManager():
             cur_index = 1
             for task in self.task_list:
                 try:
-                    self.logger.info(
-                        "准备执行第 %s 个备份任务，[%s]", cur_index, task.get_name())
+                    self.logger.info("准备执行第 %s 个备份任务，[%s]", cur_index, task.get_name())
                     task.run()
+                    self.logger.info("第 %s 个备份任务执行完毕，[%s]", cur_index, task.get_name())
                 except Exception:
                     self.logger.exception("Task [%s]: 备份发生异常。", task.get_name())
                 cur_index += 1
