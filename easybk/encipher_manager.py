@@ -47,7 +47,7 @@ class EncipherManager(Singleton):
         if force or self.changed:
             if file_name is None:
                 file_name = self.file_name
-            print(self.file_name, file_name)
+            # print(self.file_name, file_name)
             with open(file_name, "w") as fh:
                 for (k, v) in self.file_dict.items():
                     fh.write("{} {}\n".format(v, k))

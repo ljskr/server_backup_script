@@ -42,7 +42,7 @@ python3 backup.py
 
 本系统目前设置了三种类型的备份任务，所有任务都继承自 `Task` 基类。
 
-### 3.1 任务类属性说明
+### 3.1 任务基类 `Task` 属性说明
 
 | 属性名 | 类型 | 说明 |
 |--------|------|------|
@@ -52,11 +52,11 @@ python3 backup.py
 | output_file_name | str | 备份输出文件名 |
 | output_full_path | str | 备份输出文件的完整路径 |
 
-### 3.2 备份任务子类
+### 3.2 任务子类
 
-#### 3.2.1 PackTask - 文件夹打包备份任务
+#### 3.2.1 `PackTask` - 文件夹打包备份任务
 
-把某个文件夹下的所有文件打包压缩，并加上时间戳和md5。
+把某个文件夹下的所有文件打包压缩，并加上时间戳和md5。生成的文件名格式为: `{task_name}_backup_{%y%m%d_%H%M%S}_{md5}.tgz`
 
 | 参数 | 类型 | 说明 |
 |-----------|------|------|
@@ -65,9 +65,9 @@ python3 backup.py
 | tar_run_dir | str | tar 命令运行路径 |
 | backup_list | list | 需要备份的文件/文件夹列表，填写与 tar_run_dir 的相对路径。 |
 
-#### 3.2.2 SingleFileTask - 单文件备份任务
+#### 3.2.2 `SingleFileTask` - 单文件备份任务
 
-把某个单文件进行备份，常见的为单个配置文件。此类任务可以做到有变更才进行备份。
+把某个单文件进行备份，常见的为单个配置文件。此类任务可以做到有变更才进行备份。当设置了在文件变更时才备份，则会在每次执行时计算该文件的 md5 值，若 md5 值发生改变，则执行备份。 md5 值保存在 ENCIPHER_FILE 指定的文件中。 生成的文件名格式为: `{task_name}.{%y%m%d_%H%M%S}_{md5}`
 
 | 参数 | 类型 | 说明 |
 |-----------|------|------|
@@ -76,9 +76,9 @@ python3 backup.py
 | source_file | str | 需要备份的源文件路径 |
 | backup_on_change | bool | 是否仅在文件变更时才备份（默认 False） |
 
-#### 3.2.3 MysqlTask - MySQL 数据库备份任务
+#### 3.2.3 `MysqlTask` - MySQL 数据库备份任务
 
-导出 MySQL 中的数据，打包压缩并加上时间戳和md5。
+导出 MySQL 中的数据，打包压缩并加上时间戳和md5。生成的文件名格式为: `{task_name}_backup.sql.{%y%m%d_%H%M%S}_{md5}.tgz`
 
 | 参数 | 类型 | 说明 |
 |-----------|------|------|
@@ -90,15 +90,15 @@ python3 backup.py
 
 本系统目前支持两种类型的上传器，所有上传器都继承自 `Uploader` 基类。上传任务通过 `UploadTask` 类将备份任务和上传器绑定。
 
-### 4.1 上传任务类属性说明
+### 4.1 上传任务类 `UploadTask` 属性说明
 
 | 属性名 | 类型 | 说明 |
 |--------|------|------|
 | task | Task | 上传任务实例 |
 | uploader | Uploader | 上传器实例 |
-| remote_dir | str | 远端目录，文件名使用上传任务生成的文件名。 |
+| remote_dir | str | 远端目录(文件名使用备份任务生成的文件名)。 |
 
-### 4.2 上传器类属性说明
+### 4.2 上传器基类 `Uploader` 属性说明
 
 | 属性名 | 类型 | 说明 |
 |--------|------|------|
@@ -107,7 +107,7 @@ python3 backup.py
 
 ### 4.3 上传器子类
 
-#### 4.3.1 OSSUploader - 阿里云 OSS 上传器
+#### 4.3.1 `OSSUploader` - 阿里云 OSS 上传器
 
 将备份文件上传到阿里云 OSS 存储。
 
@@ -120,7 +120,7 @@ python3 backup.py
 | bucket_name | str | OSS Bucket 名称 |
 
 
-#### 4.3.2 FTPUploader - FTP 上传器
+#### 4.3.2 `FTPUploader` - FTP 上传器
 
 将备份文件上传到 FTP 服务器。
 

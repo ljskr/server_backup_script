@@ -1,10 +1,10 @@
 """
-示例程序
+备份主程序
 """
 
 import logging.config
 
-from easybk import TaskManager, PackTask, MysqlTask, SingleFileTask, OSSUploader, FTPUploader
+from easybk import TaskManager, UploadManager
 from config import init_task
 
 
