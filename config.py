@@ -15,7 +15,7 @@ def init_task(task_manager: TaskManager, upload_manager: UploadManager):
     date_str = datetime.datetime.now().strftime("%Y%m%d")
     output_base_dir = os.path.join("/root/backup/data", date_str)
     if not os.path.exists(output_base_dir):
-        os.makedirs(output_base_dir)
+        os.makedirs(output_base_dir, exist_ok=True)
 
     # PackTask 示例
     dokuwiki_task = PackTask(task_name="dokuwiki",

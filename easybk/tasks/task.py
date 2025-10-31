@@ -51,7 +51,7 @@ class Task():
         if not os.path.exists(self.output_dir):
             self.logger.info("Task [%s]: create folder %s",
                              self.task_name, self.output_dir)
-            os.makedirs(self.output_dir)
+            os.makedirs(self.output_dir, exist_ok=True)
 
         self.result = self.do_task()
 
