@@ -4,6 +4,7 @@ Date: 2018-07-10
 """
 
 from .task_manager import TaskManager
+from .upload_manager import UploadTask, UploadManager
 from .encipher_manager import EncipherManager
 from .tasks import *
 from .uploaders import *

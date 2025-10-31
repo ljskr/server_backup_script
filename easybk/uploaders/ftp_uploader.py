@@ -135,39 +135,32 @@ class FTPUploader(Uploader):
         port: FTP 端口
         username: FTP 用户名
         password: FTP 密码
-        folder: FTP 远程目录
         secure: 是否启用FTP_TLS
         passive: 是否使用被动模式
     """
 
-    def __init__(self, name: str, host: str, port: int, username: str, password: str, folder: str = None, secure: bool = False, passive: bool = True):
+    def __init__(self, name: str, host: str, port: int, username: str, password: str, secure: bool = False, passive: bool = True):
         Uploader.__init__(self, name)
         self.logger = logging.getLogger("FTPUploader")
         self.host = host
         self.port = port
         self.username = username
         self.password = password
-        self.folder = folder
         self.secure = secure
         self.passive = passive
         self.ftp_client = FTPClient(host, port, username, password, self.logger, secure=secure, passive=passive)
 
-    def do_upload(self, task: Task) -> bool:
+    def do_upload(self, task: Task, remote_dir: str) -> bool:
         """
         执行上传任务
+        参数:
+            task: 备份任务
+            remote_dir: 远程目录
         """
-        remote_folder = self.get_folder()
-        if remote_folder is not None:
-            remote_file = "{}/{}".format(remote_folder,
-                                         task.get_output_file_name())
-        else:
-            remote_file = task.get_output_file_name()
+        remote_full_path = os.path.join(remote_dir, task.get_output_file_name())
+        local_full_path = task.get_output_full_path()
+        self.logger.info("FTPUploader: 上传文件: [%s] -> [%s]", local_full_path, remote_full_path)
         self.ftp_client.put_file(
-            remote_file, task.get_output_full_path(), retry=3)
+            remote_full_path, local_full_path, retry=3)
+        self.logger.info("FTPUploader: 上传文件完成: [%s] -> [%s]", local_full_path, remote_full_path)
         return True
-
-    def get_folder(self) -> str:
-        """
-        获取远程目录
-        """
-        return self.folder

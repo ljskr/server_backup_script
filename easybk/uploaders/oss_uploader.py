@@ -63,31 +63,24 @@ class OSSUploader(Uploader):
         access_key: oss 认证密钥
         endpoint: oss 认证端点
         bucket_name: oss 认证 bucket 名称
-        folder: oss 远程目录
     """
 
-    def __init__(self, name: str, access_id: str, access_key: str, endpoint: str, bucket_name: str, folder: str = None):
+    def __init__(self, name: str, access_id: str, access_key: str, endpoint: str, bucket_name: str):
         Uploader.__init__(self, name)
         self.logger = logging.getLogger("OSSUploader")
         self.oss_bucket = OSSBucket(access_id, access_key, endpoint, bucket_name)
-        self.folder = folder
 
-    def do_upload(self, task: Task) -> bool:
+    def do_upload(self, task: Task, remote_dir: str) -> bool:
         """
         执行上传任务
+        参数:
+            task: 备份任务
+            remote_dir: 远程目录
         """
-        remote_folder = self.get_folder()
-        if remote_folder is not None:
-            remote_file = "{}/{}".format(remote_folder,
-                                         task.get_output_file_name())
-        else:
-            remote_file = task.get_output_file_name()
+        remote_full_path = os.path.join(remote_dir, task.get_output_file_name())
+        local_full_path = task.get_output_full_path()
+        self.logger.info("OSSUploader: 上传文件: [%s] -> [%s]", local_full_path, remote_full_path)
         self.oss_bucket.get_bucket().put_object_from_file(
-            remote_file, task.get_output_full_path())
+            remote_full_path, local_full_path)
+        self.logger.info("OSSUploader: 上传文件完成: [%s] -> [%s]", local_full_path, remote_full_path)
         return True
-
-    def get_folder(self) -> str:
-        """
-        获取远程目录
-        """
-        return self.folder

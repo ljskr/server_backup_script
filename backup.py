@@ -23,8 +23,10 @@ def main():
     init_logger()
 
     task_manager = TaskManager()
-    init_task(task_manager)
+    upload_manager = UploadManager()
+    init_task(task_manager, upload_manager)
     task_manager.run_all_task()
+    upload_manager.run_all_upload()
 
 
 if __name__ == "__main__":
