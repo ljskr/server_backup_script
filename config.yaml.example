@@ -46,9 +46,9 @@ uploaders:
 upload_tasks:
   - task_name: dokuwiki
     uploader_name: oss_uploader
-    remote_dir: "${date_str}/dokuwiki"
+    remote_dir: "${CURRENT_DATE}/dokuwiki"
   
   - task_name: dokuwiki
     uploader_name: ftp_uploader
-    remote_dir: "${date_str}/dokuwiki"
+    remote_dir: "${CURRENT_DATE}/dokuwiki"
 

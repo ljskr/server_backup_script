@@ -4,10 +4,14 @@ YAML 配置文件解析器
 """
 
 import os
-import yaml
 import datetime
 import logging
 import re
+
+try:
+    import yaml
+except ImportError:
+    yaml = None
 
 from easybk import TaskManager, UploadManager, UploadTask
 from easybk import PackTask, MysqlTask, SingleFileTask
@@ -108,6 +112,11 @@ def init_from_yaml(task_manager: TaskManager, upload_manager: UploadManager, con
         config_path: YAML 配置文件路径，默认为 config.yaml
     """
     logger = logging.getLogger("config_parser")
+    
+    # 检查 yaml 模块是否可用
+    if yaml is None:
+        logger.error("PyYAML 模块未安装，无法加载 YAML 配置文件。请运行: pip install PyYAML")
+        return
     
     # 检查配置文件是否存在
     if not os.path.exists(config_path):
