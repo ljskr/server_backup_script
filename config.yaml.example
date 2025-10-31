@@ -1,0 +1,54 @@
+properties:
+  output_base_dir: "/root/backup/data/${CURRENT_DATE}"
+
+tasks:
+  - type: pack
+    task_name: dokuwiki
+    output_dir: "${output_base_dir}/dokuwiki"
+    tar_run_dir: "/var/www"
+    backup_list:
+      - "dokuwiki/conf"
+      - "dokuwiki/data/attic"
+      - "dokuwiki/data/meta"
+      - "dokuwiki/data/pages"
+      - "dokuwiki/data/media"
+      - "dokuwiki/data/media_attic"
+      - "dokuwiki/data/media_meta"
+  
+  - type: mysql
+    task_name: db1
+    output_dir: "${output_base_dir}/mydb"
+    dump_option: "-u root --databases mydb"
+  
+  - type: single_file
+    task_name: file1
+    output_dir: "${output_base_dir}/myfile"
+    source_file: "/etc/profile"
+    backup_on_change: false
+
+uploaders:
+  - type: oss
+    name: oss_uploader
+    access_id: "access_id"
+    access_key: "access_key"
+    endpoint: "endpoint"
+    bucket_name: "bucket_name"
+  
+  - type: ftp
+    name: ftp_uploader
+    host: "host"
+    port: 21
+    username: "username"
+    password: "password"
+    secure: false
+    passive: true
+
+upload_tasks:
+  - task_name: dokuwiki
+    uploader_name: oss_uploader
+    remote_dir: "${date_str}/dokuwiki"
+  
+  - task_name: dokuwiki
+    uploader_name: ftp_uploader
+    remote_dir: "${date_str}/dokuwiki"
+

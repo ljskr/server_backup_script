@@ -3,9 +3,11 @@
 """
 
 import logging.config
+import os
 
 from easybk import TaskManager, UploadManager
 from config import init_task
+from config_parser import init_from_yaml
 
 
 def init_logger():
@@ -24,7 +26,15 @@ def main():
 
     task_manager = TaskManager()
     upload_manager = UploadManager()
-    init_task(task_manager, upload_manager)
+    
+    # 从 YAML 配置文件加载（如果存在）
+    if os.path.exists("config.yaml"):
+        init_from_yaml(task_manager, upload_manager, "config.yaml")
+    
+    # 从 Python 配置文件加载（如果存在）
+    if os.path.exists("config.py"):
+        init_task(task_manager, upload_manager)
+    
     task_manager.run_all_task()
     upload_manager.run_all_upload()
 
