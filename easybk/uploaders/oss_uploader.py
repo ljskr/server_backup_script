@@ -3,7 +3,7 @@ Author: liujun (ljskryj@163.com)
 Date: 2018-07-10
 """
 
-
+import os
 import logging
 
 from .uploader import Uploader, Task
