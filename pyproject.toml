@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "easybk-server-backup"
+version = "0.2.0"
+description = "YAML-driven server backup tool with OSS and FTP upload support"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {file = "LICENSE"}
+dependencies = [
+  "oss2>=2.18,<3",
+  "PyYAML>=6,<7",
+  "python-dotenv>=1,<2",
+]
+
+[project.scripts]
+easybk = "backup:main"
+
+[tool.setuptools]
+packages = ["easybk", "easybk.tasks", "easybk.uploaders"]
+py-modules = ["backup", "config_parser"]
+
+[tool.unittest]
+start-directory = "tests"

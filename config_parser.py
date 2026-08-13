@@ -18,6 +18,98 @@ from easybk import PackTask, MysqlTask, SingleFileTask
 from easybk import OSSUploader, FTPUploader
 
 
+def _validate_config(config: dict) -> list:
+    """返回配置中的所有结构和引用错误。"""
+    errors = []
+    if not isinstance(config, dict):
+        return ["配置根节点必须是对象"]
+
+    tasks = config.get("tasks", [])
+    uploaders = config.get("uploaders", [])
+    if not isinstance(tasks, list):
+        errors.append("tasks 必须是列表")
+        tasks = []
+    if not isinstance(uploaders, list):
+        errors.append("uploaders 必须是列表")
+        uploaders = []
+    if "upload_tasks" in config:
+        errors.append("upload_tasks 已废弃，请将上传配置放入对应 task 的 uploaders 中")
+
+    uploader_names = []
+    for index, uploader in enumerate(uploaders):
+        prefix = "uploaders[{}]".format(index)
+        if not isinstance(uploader, dict):
+            errors.append("{} 必须是对象".format(prefix))
+            continue
+        name = uploader.get("name")
+        uploader_type = uploader.get("type")
+        if not name:
+            errors.append("{} 缺少 name".format(prefix))
+        else:
+            uploader_names.append(name)
+        if uploader_type not in ("oss", "ftp"):
+            errors.append("{} 的 type 不受支持: {}".format(prefix, uploader_type))
+        required = {
+            "oss": ("access_id", "access_key", "endpoint", "bucket_name"),
+            "ftp": ("host", "username", "password"),
+        }.get(uploader_type, ())
+        for field in required:
+            if not uploader.get(field):
+                errors.append("{} 缺少 {}".format(prefix, field))
+        if uploader_type == "oss" and not isinstance(uploader.get("use_temp_object", True), bool):
+            errors.append("{}.use_temp_object 必须是布尔值".format(prefix))
+
+    duplicate_uploaders = {name for name in uploader_names if uploader_names.count(name) > 1}
+    for name in sorted(duplicate_uploaders):
+        errors.append("上传器名称重复: {}".format(name))
+
+    task_names = []
+    known_uploaders = set(uploader_names)
+    for index, task in enumerate(tasks):
+        prefix = "tasks[{}]".format(index)
+        if not isinstance(task, dict):
+            errors.append("{} 必须是对象".format(prefix))
+            continue
+        task_name = task.get("task_name")
+        task_type = task.get("type")
+        if not task_name:
+            errors.append("{} 缺少 task_name".format(prefix))
+        else:
+            task_names.append(task_name)
+        if task_type not in ("pack", "mysql", "single_file"):
+            errors.append("{} 的 type 不受支持: {}".format(prefix, task_type))
+        if not task.get("output_dir"):
+            errors.append("{} 缺少 output_dir".format(prefix))
+        required = {
+            "pack": ("tar_run_dir", "backup_list"),
+            "mysql": ("dump_option",),
+            "single_file": ("source_file",),
+        }.get(task_type, ())
+        for field in required:
+            if not task.get(field):
+                errors.append("{} 缺少 {}".format(prefix, field))
+
+        task_uploaders = task.get("uploaders", [])
+        if not isinstance(task_uploaders, list):
+            errors.append("{}.uploaders 必须是列表".format(prefix))
+            continue
+        for upload_index, upload in enumerate(task_uploaders):
+            upload_prefix = "{}.uploaders[{}]".format(prefix, upload_index)
+            if not isinstance(upload, dict):
+                errors.append("{} 必须是对象".format(upload_prefix))
+                continue
+            uploader_name = upload.get("uploader_name")
+            if not uploader_name:
+                errors.append("{} 缺少 uploader_name".format(upload_prefix))
+            elif uploader_name not in known_uploaders:
+                errors.append("{} 引用了不存在的上传器: {}".format(upload_prefix, uploader_name))
+
+    duplicate_tasks = {name for name in task_names if task_names.count(name) > 1}
+    for name in sorted(duplicate_tasks):
+        errors.append("任务名称重复: {}".format(name))
+    return errors
+
+
 def _replace_placeholders(text: str, variables: dict) -> str:
     """
     替换字符串中的占位符
@@ -102,6 +194,18 @@ def _process_property_value(value, variables: dict):
         return value
 
 
+def _resolve_value(value, variables: dict):
+    """递归替换配置值中的变量，并拒绝未解析的占位符。"""
+    if isinstance(value, str):
+        resolved = _replace_placeholders(value, variables)
+        if re.search(r'\$\{[^}]+\}', resolved):
+            raise ValueError("存在未解析的变量: {}".format(resolved))
+        return resolved
+    if isinstance(value, list):
+        return [_resolve_value(item, variables) for item in value]
+    return value
+
+
 def init_from_yaml(task_manager: TaskManager, upload_manager: UploadManager, config_path: str = "config.yaml"):
     """
     从 YAML 配置文件初始化任务和上传管理器
@@ -136,7 +240,13 @@ def init_from_yaml(task_manager: TaskManager, upload_manager: UploadManager, con
     
     if not config:
         logger.warning("YAML 配置文件为空: %s", config_path)
-        return
+        return False
+
+    config_errors = _validate_config(config)
+    if config_errors:
+        for error in config_errors:
+            logger.error("配置错误: %s", error)
+        return False
     
     # 获取当前时间
     now = datetime.datetime.now()
@@ -177,8 +287,11 @@ def init_from_yaml(task_manager: TaskManager, upload_manager: UploadManager, con
         
         iteration += 1
 
-    # 创建任务字典，用于后续上传任务关联
+    # 先完整构造配置对象，全部成功后再提交给管理器。
     task_dict = {}
+    created_tasks = []
+    created_upload_tasks = []
+    initialization_failed = False
     
     # 解析任务
     tasks_config = config.get("tasks", [])
@@ -186,11 +299,12 @@ def init_from_yaml(task_manager: TaskManager, upload_manager: UploadManager, con
         try:
             task = _create_task_from_config(task_config, variables)
             if task:
-                task_manager.add_task(task)
+                created_tasks.append(task)
                 task_dict[task.task_name] = task
                 logger.info("添加任务: %s (类型: %s)", task.task_name, task_config.get("type", "unknown"))
         except Exception as e:
             logger.error("创建任务失败: %s，错误: %s", task_config.get("task_name", "unknown"), str(e))
+            initialization_failed = True
             continue
     
     # 解析上传器
@@ -198,46 +312,53 @@ def init_from_yaml(task_manager: TaskManager, upload_manager: UploadManager, con
     uploader_dict = {}
     for uploader_config in uploaders_config:
         try:
-            uploader = _create_uploader_from_config(uploader_config)
+            uploader = _create_uploader_from_config(uploader_config, variables)
             if uploader:
                 uploader_dict[uploader.name] = uploader
                 logger.info("添加上传器: %s (类型: %s)", uploader.name, uploader_config.get("type", "unknown"))
         except Exception as e:
             logger.error("创建上传器失败: %s，错误: %s", uploader_config.get("name", "unknown"), str(e))
+            initialization_failed = True
             continue
     
-    # 解析上传任务
-    upload_tasks_config = config.get("upload_tasks", [])
-    for upload_task_config in upload_tasks_config:
-        try:
-            task_name = upload_task_config.get("task_name")
-            uploader_name = upload_task_config.get("uploader_name")
-            remote_dir = upload_task_config.get("remote_dir", "")
-            
-            # 替换 remote_dir 中的占位符
-            remote_dir = _replace_placeholders(remote_dir, variables)
-            
-            # 查找对应的任务和上传器
-            task = task_dict.get(task_name)
-            uploader = uploader_dict.get(uploader_name)
-            
-            if not task:
-                logger.warning("上传任务关联的任务不存在: %s，跳过", task_name)
-                continue
-            
-            if not uploader:
-                logger.warning("上传任务关联的上传器不存在: %s，跳过", uploader_name)
-                continue
-            
-            upload_task = UploadTask(task=task, uploader=uploader, remote_dir=remote_dir)
-            upload_manager.add_upload_task(upload_task)
-            logger.info("添加上传任务: 任务=%s, 上传器=%s, 远程目录=%s", 
-                       task_name, uploader_name, remote_dir)
-        except Exception as e:
-            logger.error("添加上传任务失败: %s，错误: %s", upload_task_config, str(e))
+    # 解析每个任务中直接引用的上传器
+    for task_config in tasks_config:
+        task_name = task_config.get("task_name")
+        task = task_dict.get(task_name)
+        if not task:
             continue
-    
+
+        for upload_config in task_config.get("uploaders", []):
+            try:
+                uploader_name = upload_config.get("uploader_name")
+                remote_dir = _resolve_value(upload_config.get("remote_dir", ""), variables)
+                uploader = uploader_dict.get(uploader_name)
+
+                if not uploader:
+                    logger.warning("任务 %s 引用的上传器不存在: %s，跳过", task_name, uploader_name)
+                    continue
+
+                upload_task = UploadTask(task=task, uploader=uploader, remote_dir=remote_dir)
+                created_upload_tasks.append(upload_task)
+                logger.info("添加上传任务: 任务=%s, 上传器=%s, 远程目录=%s",
+                            task_name, uploader_name, remote_dir)
+            except Exception as e:
+                logger.error("添加上传任务失败: 任务=%s, 配置=%s，错误: %s",
+                             task_name, upload_config, str(e))
+                initialization_failed = True
+                continue
+
+    if initialization_failed:
+        logger.error("YAML 配置初始化失败，未加载任何任务")
+        return False
+
+    for task in created_tasks:
+        task_manager.add_task(task)
+    for upload_task in created_upload_tasks:
+        upload_manager.add_upload_task(upload_task)
+
     logger.info("YAML 配置加载完成")
+    return True
 
 
 def _create_task_from_config(task_config: dict, variables: dict):
@@ -253,7 +374,7 @@ def _create_task_from_config(task_config: dict, variables: dict):
     output_dir = task_config.get("output_dir", "")
     
     # 替换 output_dir 中的占位符
-    output_dir = _replace_placeholders(output_dir, variables)
+    output_dir = _resolve_value(output_dir, variables)
     
     if not task_name:
         raise ValueError("任务配置缺少 task_name")
@@ -261,14 +382,10 @@ def _create_task_from_config(task_config: dict, variables: dict):
     if not output_dir:
         raise ValueError("任务配置缺少 output_dir")
     
-    # 确保输出目录存在
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir, exist_ok=True)
-    
     if task_type == "pack":
         # PackTask
-        tar_run_dir = task_config.get("tar_run_dir")
-        backup_list = task_config.get("backup_list", [])
+        tar_run_dir = _resolve_value(task_config.get("tar_run_dir"), variables)
+        backup_list = _resolve_value(task_config.get("backup_list", []), variables)
         
         if not tar_run_dir:
             raise ValueError("PackTask 配置缺少 tar_run_dir")
@@ -284,7 +401,7 @@ def _create_task_from_config(task_config: dict, variables: dict):
     
     elif task_type == "mysql":
         # MysqlTask
-        dump_option = task_config.get("dump_option")
+        dump_option = _resolve_value(task_config.get("dump_option"), variables)
         
         if not dump_option:
             raise ValueError("MysqlTask 配置缺少 dump_option")
@@ -297,7 +414,7 @@ def _create_task_from_config(task_config: dict, variables: dict):
     
     elif task_type == "single_file":
         # SingleFileTask
-        source_file = task_config.get("source_file")
+        source_file = _resolve_value(task_config.get("source_file"), variables)
         backup_on_change = task_config.get("backup_on_change", False)
         
         if not source_file:
@@ -314,25 +431,27 @@ def _create_task_from_config(task_config: dict, variables: dict):
         raise ValueError(f"不支持的任务类型: {task_type}")
 
 
-def _create_uploader_from_config(uploader_config: dict):
+def _create_uploader_from_config(uploader_config: dict, variables: dict = None):
     """
     从配置字典创建上传器对象
     
     参数:
         uploader_config: 上传器配置字典
     """
+    variables = variables or {}
     uploader_type = uploader_config.get("type")
-    name = uploader_config.get("name")
+    name = _resolve_value(uploader_config.get("name"), variables)
     
     if not name:
         raise ValueError("上传器配置缺少 name")
     
     if uploader_type == "oss":
         # OSSUploader
-        access_id = uploader_config.get("access_id")
-        access_key = uploader_config.get("access_key")
-        endpoint = uploader_config.get("endpoint")
-        bucket_name = uploader_config.get("bucket_name")
+        access_id = _resolve_value(uploader_config.get("access_id"), variables)
+        access_key = _resolve_value(uploader_config.get("access_key"), variables)
+        endpoint = _resolve_value(uploader_config.get("endpoint"), variables)
+        bucket_name = _resolve_value(uploader_config.get("bucket_name"), variables)
+        use_temp_object = uploader_config.get("use_temp_object", True)
         
         if not all([access_id, access_key, endpoint, bucket_name]):
             raise ValueError("OSSUploader 配置缺少必需参数")
@@ -342,15 +461,16 @@ def _create_uploader_from_config(uploader_config: dict):
             access_id=access_id,
             access_key=access_key,
             endpoint=endpoint,
-            bucket_name=bucket_name
+            bucket_name=bucket_name,
+            use_temp_object=use_temp_object,
         )
     
     elif uploader_type == "ftp":
         # FTPUploader
-        host = uploader_config.get("host")
+        host = _resolve_value(uploader_config.get("host"), variables)
         port = uploader_config.get("port", 21)
-        username = uploader_config.get("username")
-        password = uploader_config.get("password")
+        username = _resolve_value(uploader_config.get("username"), variables)
+        password = _resolve_value(uploader_config.get("password"), variables)
         secure = uploader_config.get("secure", False)
         passive = uploader_config.get("passive", True)
         

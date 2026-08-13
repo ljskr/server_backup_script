@@ -7,6 +7,9 @@ Date: 2018-07-11
 import datetime
 import logging
 import os
+import shlex
+import subprocess
+import tempfile
 
 from .task import Task
 from ..encipher_manager import EncipherManager
@@ -22,7 +25,7 @@ class MysqlTask(Task):
         dump_option  运行 mysqldump 所需参数
     """
 
-    def __init__(self, task_name: str, output_dir: str, dump_option: str):
+    def __init__(self, task_name: str, output_dir: str, dump_option):
         """
         参数:
             task_name  任务名
@@ -41,37 +44,42 @@ class MysqlTask(Task):
         """
         self.logger.info("Task [%s]: 开始备份Mysql.", self.task_name)
 
-        # 导出 mysql
-        temp_sql_file = "{}_backup.sql".format(self.task_name)
-        os.system("mysqldump {cmd_args} > {output_file}"
-                  .format(cmd_args=self.dump_option,
-                          output_file=os.path.join(self.output_dir, temp_sql_file)))
+        dump_options = (self.dump_option if isinstance(self.dump_option, list)
+                        else shlex.split(self.dump_option))
+        sql_fd, sql_path = tempfile.mkstemp(
+            prefix="{}_backup_".format(self.task_name), suffix=".sql", dir=self.output_dir)
+        os.close(sql_fd)
+        archive_fd, archive_path = tempfile.mkstemp(
+            prefix="{}_backup_".format(self.task_name), suffix=".tgz", dir=self.output_dir)
+        os.close(archive_fd)
 
-        # 临时打包文件名
-        temp_file = os.path.join(
-            self.output_dir, "{}_backup_temp.tgz".format(self.task_name))
+        try:
+            with open(sql_path, "wb") as output_file:
+                subprocess.run(["mysqldump", *dump_options], stdout=output_file, check=True)
 
-        # 使用tar打包需要备份的文件
-        os.system("cd {dir} && tar zcf {file} {cmd_args} --remove-files"
-                  .format(dir=self.output_dir,
-                          file=temp_file,
-                          cmd_args=temp_sql_file))
-        self.logger.info(
-            "Task [%s]: create temp file %s", self.task_name, temp_file)
+            subprocess.run(
+                ["tar", "zcf", archive_path, os.path.basename(sql_path)],
+                cwd=self.output_dir,
+                check=True,
+            )
+            subprocess.run(["tar", "tzf", archive_path], check=True,
+                           stdout=subprocess.DEVNULL)
+            self.logger.info("Task [%s]: create temp file %s", self.task_name, archive_path)
 
-        # 计算压缩包的md5
-        md5 = EncipherManager.md5sum(temp_file)
-        self.logger.info("Task [%s]: md5sum is %s", self.task_name, md5)
+            digest = EncipherManager.digest(archive_path)
+            self.logger.info("Task [%s]: SHA-256 is %s", self.task_name, digest)
 
-        # 重命名打包文件
-        now = datetime.datetime.now()
-        output_file_name = "{}_backup.sql.{}_{}.tgz".format(
-            self.task_name, now.strftime("%y%m%d_%H%M%S"), md5)
-        self.set_output_file_name_and_full_path(output_file_name)
-
-        os.rename(temp_file, self.output_full_path)
-        self.logger.info("Task [%s]: rename file to %s",
-                         self.task_name, self.output_full_path)
+            now = datetime.datetime.now()
+            output_file_name = "{}_backup.sql.{}_{}.tgz".format(
+                self.task_name, now.strftime("%y%m%d_%H%M%S"), digest)
+            self.set_output_file_name_and_full_path(output_file_name)
+            os.replace(archive_path, self.output_full_path)
+            self.logger.info("Task [%s]: rename file to %s",
+                             self.task_name, self.output_full_path)
+        finally:
+            for temp_path in (sql_path, archive_path):
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
 
         self.logger.info("Task [%s]: 结束备份Mysql.", self.task_name)
 

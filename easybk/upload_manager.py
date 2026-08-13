@@ -117,7 +117,7 @@ class UploadManager():
 
         self.upload_task_list.append(upload_task)
 
-    def run_all_upload(self, use_thread_pool: bool = False, max_workers: int = 3):
+    def run_all_upload(self, use_thread_pool: bool = False, max_workers: int = 3) -> bool:
         """
         运行所有上传任务
         :param use_thread_pool: 是否使用线程池并发执行任务
@@ -130,31 +130,30 @@ class UploadManager():
 
         if upload_task_count == 0:
             self.logger.info("没有上传任务，跳过上传任务。")
-            return
+            return True
 
         def _run_upload_task(index, ut):
             try:
                 self.logger.info("准备执行第 %s 个上传任务: [%s -> %s]", index, ut.get_task().get_name(), ut.get_uploader().get_name())
-                ut.run()
-                self.logger.info("上传任务 [%s]: 执行完成: [%s -> %s]", index, ut.get_task().get_name(), ut.get_uploader().get_name())
+                result = ut.run()
+                if result or not ut.get_task().get_result():
+                    self.logger.info("上传任务 [%s]: 执行完成: [%s -> %s]", index, ut.get_task().get_name(), ut.get_uploader().get_name())
+                    return True
+                return False
             except Exception:
                 self.logger.exception("UploadTask [%s]: 执行发生异常。: [%s -> %s]", index, ut.get_task().get_name(), ut.get_uploader().get_name())
+                return False
 
+        results = []
         if use_thread_pool and upload_task_count > 0:
             with ThreadPoolExecutor(max_workers=min(max_workers, upload_task_count)) as executor:
                 futures = [executor.submit(_run_upload_task, idx, ut) for idx, ut in enumerate(self.upload_task_list, start=1)]
                 for f in futures:
-                    f.result()
+                    results.append(f.result())
         else:
-            cur_index = 1
-            for upload_task in self.upload_task_list:
-                try:
-                    self.logger.info("准备执行第 %s 个上传任务: [%s -> %s]", cur_index, upload_task.get_task().get_name(), upload_task.get_uploader().get_name())
-                    upload_task.run()
-                    self.logger.info("上传任务 [%s]: 执行完成: [%s -> %s]", cur_index, upload_task.get_task().get_name(), upload_task.get_uploader().get_name())
-                except Exception:
-                    self.logger.exception("UploadTask [%s]: 执行发生异常。: [%s -> %s]", cur_index, upload_task.get_task().get_name(), upload_task.get_uploader().get_name())
-                cur_index += 1
+            results = [_run_upload_task(index, upload_task)
+                       for index, upload_task in enumerate(self.upload_task_list, start=1)]
 
         self.logger.info("上传任务执行完毕！")
+        return all(results)
 

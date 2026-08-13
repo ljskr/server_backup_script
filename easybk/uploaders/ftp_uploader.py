@@ -7,6 +7,7 @@ Date: 2025-10-30
 import logging
 import os
 import posixpath
+import uuid
 from ftplib import FTP, FTP_TLS, error_perm
 
 from .uploader import Uploader, Task
@@ -40,11 +41,8 @@ class FTPClient():
         ftp.login(self.username, self.password)
         # TLS模式：保护数据。要在登录和cwd后调用prot_p
         if self.secure:
-            try:
-                ftp.prot_p()
-                self.logger.info("FTPUploader: 启用TLS保护传输 (PROT P)")
-            except Exception as e:
-                self.logger.warning("FTPUploader: TLS保护传输失败，将以普通FTP模式继续：%s", str(e))
+            ftp.prot_p()
+            self.logger.info("FTPUploader: 启用TLS保护传输 (PROT P)")
         # 设置被动模式
         try:
             ftp.set_pasv(self.passive)
@@ -110,6 +108,12 @@ class FTPClient():
                 with open(local_path, 'rb') as f:
                     self._ftp.storbinary(f'STOR {remote_name}', f)
 
+                remote_size = self._ftp.size(remote_name)
+                local_size = os.path.getsize(local_path)
+                if remote_size != local_size:
+                    raise IOError("FTP 上传后大小校验失败: 本地={}, 远端={}".format(
+                        local_size, remote_size))
+
                 self.logger.info("FTPUploader: 文件 %s 上传完成", local_path)
                 # 上传后回到根
                 self._ftp.cwd("/")
@@ -123,6 +127,20 @@ class FTPClient():
                 else:
                     self.logger.error("FTPUploader: 上传失败已重试%d次，放弃：%s", retry, str(e))
                     raise
+
+    def rename_file(self, source_path: str, target_path: str):
+        """将同一远端目录中的临时文件原子改名为最终文件。"""
+        source_path = source_path.replace('\\', '/')
+        target_path = target_path.replace('\\', '/')
+        self._connect()
+        self._ftp.rename(source_path, target_path)
+
+    def remove_file(self, remote_path: str):
+        try:
+            self._connect()
+            self._ftp.delete(remote_path.replace('\\', '/'))
+        except Exception:
+            self.logger.warning("FTPUploader: 清理远端临时文件失败: %s", remote_path)
 
 
 class FTPUploader(Uploader):
@@ -157,10 +175,15 @@ class FTPUploader(Uploader):
             task: 备份任务
             remote_dir: 远程目录
         """
-        remote_full_path = os.path.join(remote_dir, task.get_output_file_name())
+        remote_full_path = posixpath.join(remote_dir, task.get_output_file_name())
+        temp_remote_path = "{}.part-{}".format(remote_full_path, uuid.uuid4().hex)
         local_full_path = task.get_output_full_path()
         self.logger.info("FTPUploader: 上传文件: [%s] -> [%s]", local_full_path, remote_full_path)
-        self.ftp_client.put_file(
-            remote_full_path, local_full_path, retry=3)
+        try:
+            self.ftp_client.put_file(temp_remote_path, local_full_path, retry=3)
+            self.ftp_client.rename_file(temp_remote_path, remote_full_path)
+        except Exception:
+            self.ftp_client.remove_file(temp_remote_path)
+            raise
         self.logger.info("FTPUploader: 上传文件完成: [%s] -> [%s]", local_full_path, remote_full_path)
         return True

@@ -40,7 +40,7 @@ class TaskManager():
         self.task_list.append(task)
 
 
-    def run_all_task(self, use_thread_pool: bool = True, max_workers: int = 3):
+    def run_all_task(self, use_thread_pool: bool = True, max_workers: int = 3) -> bool:
         """
         运行所有备份任务
         :param use_thread_pool: 是否使用线程池并发执行任务
@@ -58,28 +58,30 @@ class TaskManager():
         def _run_task(index, tsk):
             try:
                 self.logger.info("准备执行第 %s 个备份任务，[%s]", index, tsk.get_name())
-                tsk.run()
-                self.logger.info("第 %s 个备份任务执行完毕，[%s]", index, tsk.get_name())
+                result = tsk.run()
+                if result:
+                    self.logger.info("第 %s 个备份任务执行成功，[%s]", index, tsk.get_name())
+                else:
+                    self.logger.info("第 %s 个备份任务未生成新备份，[%s]", index, tsk.get_name())
+                return True
             except Exception:
                 self.logger.exception("Task [%s]: 备份发生异常。", tsk.get_name())
+                return False
 
+        results = []
         if use_thread_pool and task_count > 0:
             with ThreadPoolExecutor(max_workers=min(max_workers, task_count)) as executor:
                 futures = [executor.submit(_run_task, idx, t) for idx, t in enumerate(self.task_list, start=1)]
                 for f in futures:
-                    f.result()
+                    results.append(f.result())
         else:
-            cur_index = 1
-            for task in self.task_list:
-                try:
-                    self.logger.info("准备执行第 %s 个备份任务，[%s]", cur_index, task.get_name())
-                    task.run()
-                    self.logger.info("第 %s 个备份任务执行完毕，[%s]", cur_index, task.get_name())
-                except Exception:
-                    self.logger.exception("Task [%s]: 备份发生异常。", task.get_name())
-                cur_index += 1
+            results = [_run_task(index, task)
+                       for index, task in enumerate(self.task_list, start=1)]
 
-        # 保存 encipher 文件
-        self.encipher_manager.save_data_to_file()
         self.logger.info("备份任务执行完毕！ ")
+        return all(results)
+
+    def save_state(self):
+        """在备份及上传全部成功后提交变化检测状态。"""
+        self.encipher_manager.save_data_to_file()
 

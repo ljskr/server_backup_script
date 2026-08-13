@@ -5,12 +5,50 @@
 ## 1. 运行方式
 
 ```bash
-# 修改任务配置
-vi config.py
+# 从示例创建配置并按需修改
+cp config.yaml.example config.yaml
+cp .env.example .env
+vi config.yaml
+vi .env
 
-# 执行备份任务
-python3 backup.py
+# 安装并执行备份任务
+python3 -m pip install -e .
+easybk --config ./config.yaml
+
+# 仅校验配置和环境变量，不执行备份
+easybk --config ./config.yaml --validate-config
 ```
+
+也可以使用 `python3 -m pip install -r requirements.txt` 安装运行依赖后直接执行
+`python3 backup.py`。
+
+项目只使用 YAML 配置。也可以不安装命令行入口，直接运行 `python3 backup.py`。配置无效
+时程序退出码为 `2`；备份或上传失败时退出码为 `1`；检测到已有实例时退出码为 `3`。
+
+命令行支持以下路径参数：
+
+```text
+--config CONFIG          YAML 配置文件
+--env-file ENV_FILE      环境变量文件
+--state-file STATE_FILE  文件变化摘要状态文件
+--lock-file LOCK_FILE    单实例运行锁
+--log-config LOG_CONFIG  logging 配置文件
+--validate-config        仅校验配置
+```
+
+建议通过环境变量提供 OSS 和 FTP 凭据，避免把真实密码提交到仓库。配置文件支持
+`${ENV:VARIABLE_NAME}` 格式的环境变量引用。
+
+启动时会自动读取项目目录中的 `.env`，但不会覆盖操作系统中已经存在的同名环境变量。
+`.env` 不应提交到版本库；可以从 `.env.example` 创建本地文件。
+
+摘要只用于检测源文件变化和标识备份文件，不用于防篡改验证。当前使用 SHA-256；在现代
+OpenSSL/CPU 上通常具有硬件加速，文件摘要过程的主要开销通常是读取磁盘。旧 MD5 状态
+会在首次运行时自然迁移，可能触发一次重新备份。
+
+程序通过 `.backup.lock` 防止多个实例并行执行；检测到已有实例时退出码为 `3`。生成的
+tar 归档会在正式落盘前执行完整性检查。FTP 上传先写入临时远端名称、校验对象大小，
+再切换为最终名称，避免把不完整上传暴露为正式备份。
 
 ## 2. 主要框架说明
 
@@ -24,7 +62,7 @@ python3 backup.py
 
 3) `EncipherManager` 类。
 
-负责计算、读取和保存 md5 值。
+负责计算、读取和保存文件变化检测摘要。
 
 4) `Task` 类。
 
@@ -56,7 +94,7 @@ python3 backup.py
 
 #### 3.2.1 `PackTask` - 文件夹打包备份任务
 
-把某个文件夹下的所有文件打包压缩，并加上时间戳和md5。生成的文件名格式为: `{task_name}_backup_{%y%m%d_%H%M%S}_{md5}.tgz`
+把某个文件夹下的所有文件打包压缩，并加上时间戳和 SHA-256 摘要。生成的文件名格式为: `{task_name}_backup_{%y%m%d_%H%M%S}_{digest}.tgz`
 
 | 参数 | 类型 | 说明 |
 |-----------|------|------|
@@ -67,7 +105,7 @@ python3 backup.py
 
 #### 3.2.2 `SingleFileTask` - 单文件备份任务
 
-把某个单文件进行备份，常见的为单个配置文件。此类任务可以做到有变更才进行备份。当设置了在文件变更时才备份，则会在每次执行时计算该文件的 md5 值，若 md5 值发生改变，则执行备份。 md5 值保存在 ENCIPHER_FILE 指定的文件中。 生成的文件名格式为: `{task_name}.{%y%m%d_%H%M%S}_{md5}`
+把某个单文件进行备份，常见的为单个配置文件。此类任务可以做到有变更才进行备份。当设置了在文件变更时才备份，则会在每次执行时计算文件摘要，若摘要发生改变，则执行备份。摘要保存在状态文件中。生成的文件名格式为: `{task_name}.{%y%m%d_%H%M%S}_{digest}`
 
 | 参数 | 类型 | 说明 |
 |-----------|------|------|
@@ -78,7 +116,7 @@ python3 backup.py
 
 #### 3.2.3 `MysqlTask` - MySQL 数据库备份任务
 
-导出 MySQL 中的数据，打包压缩并加上时间戳和md5。生成的文件名格式为: `{task_name}_backup.sql.{%y%m%d_%H%M%S}_{md5}.tgz`
+导出 MySQL 中的数据，打包压缩并加上时间戳和 SHA-256 摘要。生成的文件名格式为: `{task_name}_backup.sql.{%y%m%d_%H%M%S}_{digest}.tgz`
 
 | 参数 | 类型 | 说明 |
 |-----------|------|------|
@@ -118,6 +156,16 @@ python3 backup.py
 | access_key | str | OSS AccessKey Secret |
 | endpoint | str | OSS 服务端点 |
 | bucket_name | str | OSS Bucket 名称 |
+| use_temp_object | bool | 是否先上传临时对象并复制为最终对象，默认 `true` |
+
+OSS 有两种上传策略：
+
+- `use_temp_object: true`：先上传随机临时 key，校验大小，再调用 OSS 服务端复制生成最终
+  key，最后删除临时对象。最终 key 不会暴露未完成内容，但会增加复制、删除请求，并在
+  操作期间短暂占用双份存储。不同 OSS 运营商是否对复制流量、请求或临时存储收费，应以
+  其计费规则为准。
+- `use_temp_object: false`：直接上传最终 key，随后校验对象大小。只上传一次且不执行复制
+  和删除，费用行为更简单；但覆盖同名对象时，无法提供临时 key 切换带来的隔离保障。
 
 
 #### 4.3.2 `FTPUploader` - FTP 上传器
@@ -133,4 +181,33 @@ python3 backup.py
 | password | str | FTP 密码 |
 | secure | bool | 是否启用 FTP_TLS（默认 False） |
 | passive | bool | 是否使用被动模式（默认 True） |
+
+## 5. 恢复与验证
+
+本地恢复前先验证归档，再解压：
+
+```bash
+tar -tzf /path/to/backup.tgz
+mkdir -p /tmp/easybk-restore
+tar -xzf /path/to/backup.tgz -C /tmp/easybk-restore
+```
+
+MySQL 备份解压后使用测试数据库先行恢复，不要直接覆盖生产库：
+
+```bash
+mysql --user=root --database=restore_test < /tmp/easybk-restore/backup.sql
+```
+
+建议定期从 OSS/FTP 下载备份到独立主机，核对文件大小、执行 `tar -tzf`，并完成一次测试
+恢复。上传成功和归档可读并不能替代真实恢复演练。
+
+## 6. 开发与持续集成
+
+```bash
+python3 -m pip install -e .
+python3 -m unittest discover -s tests -v
+python3 -m compileall -q backup.py config_parser.py easybk tests
+```
+
+GitHub Actions 会在 Linux、Windows，以及 Python 3.9、3.12 组合上执行测试和编译检查。
 

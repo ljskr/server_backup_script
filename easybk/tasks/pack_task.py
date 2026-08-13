@@ -7,6 +7,8 @@ Date: 2018-07-10
 import datetime
 import logging
 import os
+import subprocess
+import tempfile
 
 from .task import Task
 from ..encipher_manager import EncipherManager
@@ -44,31 +46,32 @@ class PackTask(Task):
         """
         self.logger.info("Task [%s]: 开始打包.", self.task_name)
 
-        # 临时打包文件名
-        temp_file = os.path.join(
-            self.output_dir, "{}_backup_temp.tgz".format(self.task_name))
+        fd, temp_file = tempfile.mkstemp(
+            prefix="{}_backup_".format(self.task_name), suffix=".tgz", dir=self.output_dir)
+        os.close(fd)
+        try:
+            subprocess.run(
+                ["tar", "zcf", temp_file, *self.backup_list],
+                cwd=self.tar_run_dir,
+                check=True,
+            )
+            subprocess.run(["tar", "tzf", temp_file], check=True,
+                           stdout=subprocess.DEVNULL)
+            self.logger.info("Task [%s]: create temp file %s", self.task_name, temp_file)
 
-        # 使用tar打包需要备份的文件
-        os.system("cd {dir} && tar zcf {file} {cmd_args}"
-                  .format(dir=self.tar_run_dir,
-                          file=temp_file,
-                          cmd_args=" ".join(self.backup_list)))
-        self.logger.info(
-            "Task [%s]: create temp file %s", self.task_name, temp_file)
+            digest = EncipherManager.digest(temp_file)
+            self.logger.info("Task [%s]: SHA-256 is %s", self.task_name, digest)
 
-        # 计算压缩包的md5
-        md5 = EncipherManager.md5sum(temp_file)
-        self.logger.info("Task [%s]: md5sum is %s", self.task_name, md5)
-
-        # 重命名打包文件
-        now = datetime.datetime.now()
-        output_file_name = "{}_backup_{}_{}.tgz".format(
-            self.task_name, now.strftime("%y%m%d_%H%M%S"), md5)
-        self.set_output_file_name_and_full_path(output_file_name)
-
-        os.rename(temp_file, self.output_full_path)
-        self.logger.info("Task [%s]: rename file to %s",
-                         self.task_name, self.output_full_path)
+            now = datetime.datetime.now()
+            output_file_name = "{}_backup_{}_{}.tgz".format(
+                self.task_name, now.strftime("%y%m%d_%H%M%S"), digest)
+            self.set_output_file_name_and_full_path(output_file_name)
+            os.replace(temp_file, self.output_full_path)
+            self.logger.info("Task [%s]: rename file to %s",
+                             self.task_name, self.output_full_path)
+        finally:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
 
         self.logger.info("Task [%s]: 结束打包.", self.task_name)
 

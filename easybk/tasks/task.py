@@ -41,7 +41,7 @@ class Task():
         """
         return self.result
 
-    def run(self):
+    def run(self) -> bool:
         """
         执行备份任务并上传
         """
@@ -54,6 +54,7 @@ class Task():
             os.makedirs(self.output_dir, exist_ok=True)
 
         self.result = self.do_task()
+        return self.result
 
     @abc.abstractmethod
     def do_task(self) -> bool:

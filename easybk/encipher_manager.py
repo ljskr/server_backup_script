@@ -6,6 +6,8 @@ Date: 2018-07-11
 
 import hashlib
 import logging
+import os
+import tempfile
 
 from .singleton import Singleton
 
@@ -29,10 +31,18 @@ class EncipherManager(Singleton):
         self.changed = False
         self.file_name = file_name
 
-        with open(file_name, "r") as fh:
-            lines = fh.readlines()
-            for line in lines:
-                cols = line.split()
+        if not os.path.exists(file_name):
+            self.logger.info("摘要状态文件不存在，将创建新文件: %s", file_name)
+            return
+
+        with open(file_name, "r", encoding="utf-8") as fh:
+            for line_number, line in enumerate(fh, start=1):
+                line = line.rstrip("\n")
+                if not line.strip():
+                    continue
+                cols = line.split(" ", 1)
+                if len(cols) != 2 or not cols[0] or not cols[1]:
+                    raise ValueError("摘要状态文件第 {} 行格式错误".format(line_number))
                 self.file_dict[cols[1]] = cols[0]
         self.logger.info("已加载 %s 条数据", len(self.file_dict))
 
@@ -47,10 +57,23 @@ class EncipherManager(Singleton):
         if force or self.changed:
             if file_name is None:
                 file_name = self.file_name
-            # print(self.file_name, file_name)
-            with open(file_name, "w") as fh:
-                for (k, v) in self.file_dict.items():
-                    fh.write("{} {}\n".format(v, k))
+            if not file_name:
+                raise ValueError("未指定摘要状态文件")
+            target = os.path.abspath(file_name)
+            target_dir = os.path.dirname(target)
+            os.makedirs(target_dir, exist_ok=True)
+            fd, temp_path = tempfile.mkstemp(prefix=".digest-", dir=target_dir, text=True)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
+                    for key, value in sorted(self.file_dict.items()):
+                        fh.write("{} {}\n".format(value, key))
+                    fh.flush()
+                    os.fsync(fh.fileno())
+                os.replace(temp_path, target)
+                self.changed = False
+            finally:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
 
     def check_if_has_changed(self, name, value) -> bool:
         """
@@ -69,25 +92,28 @@ class EncipherManager(Singleton):
         self.changed = True
 
     @staticmethod
-    def md5sum(file_name) -> str:
+    def digest(file_name) -> str:
         """
-        计算文件md5值
+        使用 SHA-256 计算文件摘要，仅用于变化检测和备份标识。
 
         参数： 文件名
-        返回值： md5
+        返回值：SHA-256 十六进制摘要
         """
         def read_chunks(fh):
-            fh.seek(0)
             while True:
-                chunk = fh.read(8096)
+                chunk = fh.read(1024 * 1024)
                 if chunk:
                     yield chunk
                 else:
                     break
-            fh.seek(0)  # 最后重置游标
 
-        md5 = hashlib.md5()
+        digest = hashlib.sha256()
         with open(file_name, "rb") as fh:
             for chunk in read_chunks(fh):
-                md5.update(chunk)
-        return md5.hexdigest()
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    @staticmethod
+    def md5sum(file_name) -> str:
+        """兼容旧调用；新实现返回 SHA-256 摘要。"""
+        return EncipherManager.digest(file_name)
