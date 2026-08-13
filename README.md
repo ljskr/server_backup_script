@@ -209,5 +209,5 @@ python3 -m unittest discover -s tests -v
 python3 -m compileall -q backup.py config_parser.py easybk tests
 ```
 
-GitHub Actions 会在 Linux、Windows，以及 Python 3.9、3.12 组合上执行测试和编译检查。
+GitHub Actions 会在 Linux 的 Python 3.9、3.12 环境中执行测试和编译检查。
 
