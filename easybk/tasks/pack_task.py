@@ -14,6 +14,21 @@ from .task import Task
 from ..encipher_manager import EncipherManager
 
 
+STDERR_LOG_TAIL_BYTES = 64 * 1024
+
+
+def _read_stderr_tail(file_path: str) -> str:
+    """读取 stderr 日志尾部，避免错误日志过大时占用过多内存。"""
+    file_size = os.path.getsize(file_path)
+    with open(file_path, "rb") as error_file:
+        if file_size > STDERR_LOG_TAIL_BYTES:
+            error_file.seek(-STDERR_LOG_TAIL_BYTES, os.SEEK_END)
+        content = error_file.read().decode("utf-8", errors="replace").strip()
+    if file_size > STDERR_LOG_TAIL_BYTES:
+        return "<stderr 过长，仅显示最后 64 KiB>\n{}".format(content)
+    return content
+
+
 class PackTask(Task):
     """
     打包备份任务
@@ -49,12 +64,26 @@ class PackTask(Task):
         fd, temp_file = tempfile.mkstemp(
             prefix="{}_backup_".format(self.task_name), suffix=".tgz", dir=self.output_dir)
         os.close(fd)
+        stderr_fd, stderr_path = tempfile.mkstemp(
+            prefix="{}_tar_".format(self.task_name), suffix=".stderr.log",
+            dir=self.output_dir)
         try:
-            subprocess.run(
-                ["tar", "zcf", temp_file, *self.backup_list],
-                cwd=self.tar_run_dir,
-                check=True,
-            )
+            with os.fdopen(stderr_fd, "wb") as stderr_file:
+                try:
+                    subprocess.run(
+                        ["tar", "zcf", temp_file, *self.backup_list],
+                        cwd=self.tar_run_dir,
+                        check=True,
+                        stderr=stderr_file,
+                    )
+                except subprocess.CalledProcessError as exc:
+                    stderr_file.flush()
+                    tar_error = _read_stderr_tail(stderr_path)
+                    self.logger.error(
+                        "Task [%s]: tar 失败，退出码=%s，stderr=%s",
+                        self.task_name, exc.returncode,
+                        tar_error or "<无错误输出>")
+                    raise
             subprocess.run(["tar", "tzf", temp_file], check=True,
                            stdout=subprocess.DEVNULL)
             self.logger.info("Task [%s]: create temp file %s", self.task_name, temp_file)
@@ -72,6 +101,8 @@ class PackTask(Task):
         finally:
             if os.path.exists(temp_file):
                 os.remove(temp_file)
+            if os.path.exists(stderr_path):
+                os.remove(stderr_path)
 
         self.logger.info("Task [%s]: 结束打包.", self.task_name)
 

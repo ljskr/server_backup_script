@@ -128,6 +128,23 @@ class ReliabilityTests(unittest.TestCase):
             self.assertEqual(command[:2], ["tar", "zcf"])
             self.assertEqual(command[-2:], ["file with spaces", "; unsafe"])
             self.assertEqual(list(Path(temp_dir).glob("*.tgz")), [])
+            self.assertEqual(list(Path(temp_dir).glob("*.stderr.log")), [])
+
+    def test_pack_task_logs_tar_stderr_from_temp_file(self):
+        with tempfile.TemporaryDirectory(dir=".") as temp_dir:
+            task = PackTask("pack", temp_dir, temp_dir, ["missing"])
+
+            def fail_tar(command, **kwargs):
+                kwargs["stderr"].write(b"tar: missing: Cannot stat\n")
+                raise subprocess.CalledProcessError(2, command)
+
+            with mock.patch("easybk.tasks.pack_task.subprocess.run", side_effect=fail_tar), \
+                    self.assertLogs("PackTask", level="ERROR") as captured:
+                with self.assertRaises(subprocess.CalledProcessError):
+                    task.do_task()
+
+            self.assertIn("tar: missing: Cannot stat", "\n".join(captured.output))
+            self.assertEqual(list(Path(temp_dir).glob("*.stderr.log")), [])
 
     @unittest.skipUnless(shutil.which("tar"), "tar is not installed")
     def test_pack_task_creates_verified_archive(self):
